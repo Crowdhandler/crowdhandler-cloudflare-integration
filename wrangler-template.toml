@@ -1,4 +1,4 @@
-name = "crowdhandler-cloudfront-integration"
+name = "crowdhandler-integration"
 type = "webpack"
 
 account_id = ""
