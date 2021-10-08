@@ -39,10 +39,22 @@ async function handleRequest(event) {
     redirect: request.redirect,
   })
 
+  //We can't be sure that these optional environment variables exists so do a check first to avoid a reference error
   //Add x-ch-no-bypass header to request object if NO_BYPASS present in CF env variables
-  //We can't be sure that the env variable exists so do a check to avoid a reference error
   if (typeof NO_BYPASS !== 'undefined') {
     modifiedRequest.headers.append('x-ch-no-bypass', NO_BYPASS)
+  }
+
+  //If environment variable is set to true, users that fail to check-in with CrowdHandler will be trusted.
+  let failTrust = false
+  if (typeof FAIL_TRUST !== 'undefined' && FAIL_TRUST === 'true') {
+    failTrust = true
+  }
+
+  // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
+  let safetyNetSlug
+  if (typeof SAFETY_NET_SLUG !== 'undefined') {
+    safetyNetSlug = SAFETY_NET_SLUG
   }
 
   //Handle static file extensions
@@ -96,15 +108,9 @@ async function handleRequest(event) {
   //URL encode the targetURL to be used later in redirects
   let targetURL
   if (queryString) {
-    targetURL = encodeURIComponent(
-      //`https://${urlAttributes.hostname}${urlAttributes.pathname}${queryString}`,
-      `https://${host}${path}${queryString}`,
-    )
+    targetURL = encodeURIComponent(`https://${host}${path}${queryString}`)
   } else {
-    targetURL = encodeURIComponent(
-      //`https://${urlAttributes.hostname}${urlAttributes.pathname}`,
-      `https://${host}${path}`,
-    )
+    targetURL = encodeURIComponent(`https://${host}${path}`)
   }
 
   //Parse cookies
@@ -137,14 +143,18 @@ async function handleRequest(event) {
   //Make fetch
   if (token) {
     httpParams.method = 'GET'
-    response = await fetch(
-      `${apiHost}/requests/${token}?url=${targetURL}&agent=${encodeURIComponent(
-        userAgent,
-      )}&ip=${encodeURIComponent(IPAddress)}&lang=${encodeURIComponent(
-        language,
-      )}`,
-      httpParams,
-    )
+    try {
+      response = await fetch(
+        `${apiHost}/requests/${token}?url=${targetURL}&agent=${encodeURIComponent(
+          userAgent,
+        )}&ip=${encodeURIComponent(IPAddress)}&lang=${encodeURIComponent(
+          language,
+        )}`,
+        httpParams,
+      )
+    } catch (error) {
+      console.error(error)
+    }
   } else {
     //This is a post so generate a payload and add it to the httpParams object
     httpParams.body = JSON.stringify({
@@ -154,7 +164,11 @@ async function handleRequest(event) {
       url: url,
     })
     httpParams.method = 'POST'
-    response = await fetch(`${apiHost}/requests`, httpParams)
+    try {
+      response = await fetch(`${apiHost}/requests`, httpParams)
+    } catch (error) {
+      console.error(error)
+    }
   }
 
   //Process fetch response
@@ -166,9 +180,10 @@ async function handleRequest(event) {
   //Handle API request error here
   if (results.success !== true) {
     console.error(
-      `API response returned a ${results.status} response with message ${results.statusText}`,
+      `API response returned a ${results.status} response with error ${results.statusText}`,
     )
-    responseBody = http_helpers.dummyResponseData.result
+    responseBody = results.body.result
+    console.log(responseBody)
   } else {
     //Response body here
     responseBody = results.body.result
@@ -184,9 +199,17 @@ async function handleRequest(event) {
     redirect = true
     redirectLocation = `https://wait.crowdhandler.com/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${API_KEY}`
     //Abnormal response. Redirect to safety net waiting room until further notice
-  } else if (responseBody.promoted !== 1 && responseBody.status === 2) {
+  } else if (
+    failTrust !== true &&
+    responseBody.promoted !== 1 &&
+    responseBody.status === 2
+  ) {
     redirect = true
-    redirectLocation = `https://wait.crowdhandler.com?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
+    if (safetyNetSlug) {
+      redirectLocation = `https://wait.crowdhandler.com/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
+    } else {
+      redirectLocation = `https://wait.crowdhandler.com?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
+    }
     //User is promoted
   } else {
     redirect = false
