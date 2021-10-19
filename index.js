@@ -224,7 +224,7 @@ async function handleRequest(event) {
           status: 302,
           headers: {
             Location: redirectLocation,
-            'Set-Cookie': `crowdhandler=${responseBody.token}`,
+            'Set-Cookie': `crowdhandler=${responseBody.token}; path=/; Secure; HttpOnly`,
           },
         })
       } else {
