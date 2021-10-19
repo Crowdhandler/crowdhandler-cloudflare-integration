@@ -219,7 +219,22 @@ async function handleRequest(event) {
     case true: {
       //redirect
       console.log('redirecting...')
-      return Response.redirect(redirectLocation, statusCode)
+      if (responseBody.token) {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: redirectLocation,
+            'Set-Cookie': `crowdhandler=${responseBody.token}`,
+          },
+        })
+      } else {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: redirectLocation,
+          },
+        })
+      }
       break
     }
     case false: {
