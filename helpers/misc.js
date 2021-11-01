@@ -28,6 +28,9 @@ const helpers = {
     'woff2',
     'xml',
   ],
+  lottery: function(roofInteger) {
+    return Math.round(Math.random() * parseInt(roofInteger));
+  },
   parseCookies: function(headers) {
     const parsedCookie = {}
     if (headers.cookie) {
