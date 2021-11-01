@@ -280,10 +280,11 @@ async function handleRequest(event) {
 
   //Send request meta information.
   async function sendRequestMeta() {
-    if (responseID) {
+    //Sampling
+    if (responseID && helpers.lottery(2) === 0) {
       httpParams.body = JSON.stringify({
         httpCode: originResponse.status,
-        sampleRate: 100,
+        sampleRate: 3,
         time: requestEndTime - requestStartTime,
       })
       httpParams.method = 'PUT'
