@@ -21,6 +21,7 @@ async function handleRequest(event) {
   //https://support.cloudflare.com/hc/en-us/articles/200170986-How-does-Cloudflare-handle-HTTP-Request-headers-
   const IPAddress = requestHeaders['cf-connecting-ip']
   const userAgent = requestHeaders['user-agent']
+  const validToken = /(.*\d+.*)/
   let language
 
   //attempt to pull language from accept-language header
@@ -124,6 +125,11 @@ async function handleRequest(event) {
   } else if (crowdhandlerCookieValue) {
     token = crowdhandlerCookieValue
   } else {
+    token = null
+  }
+
+  //Invalidate tokens that don't conform to the accepted format
+  if (validToken.test(token) !== true) {
     token = null
   }
 
@@ -259,7 +265,6 @@ async function handleRequest(event) {
 
   //Set token in cookie
   //Make sure we don't set invalid values
-  const validToken = /(.*\d+.*)/
   if (validToken.test(responseBody.token) === true) {
     modifiedOriginResponse.headers.append(
       'set-cookie',
