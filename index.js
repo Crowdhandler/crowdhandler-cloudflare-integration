@@ -47,9 +47,9 @@ async function handleRequest(event) {
   }
 
   //If environment variable is set to true, users that fail to check-in with CrowdHandler will be trusted.
-  let failTrust = false
-  if (typeof FAIL_TRUST !== 'undefined' && FAIL_TRUST === 'true') {
-    failTrust = true
+  let failTrust = true
+  if (typeof FAIL_TRUST !== 'undefined' && FAIL_TRUST === 'false') {
+    failTrust = false
   }
 
   // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
