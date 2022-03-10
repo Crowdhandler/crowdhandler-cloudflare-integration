@@ -1,6 +1,113 @@
 import helpers from './helpers/misc'
 import http_helpers from './helpers/http'
 
+const timeout = require('await-timeout')
+
+async function handleWhitelabelRequest(request) {
+  let fallbackPath = `/${request.queryString}`
+  let slug = request.path.substring(4)
+
+  let templateContentType = 'text/html;charset=UTF-8'
+  let templateDomain = 'wait.crowdhandler.com'
+  let templateEndpoint
+  let templateFetchTimeout = 6000
+  if (slug) {
+    templateEndpoint = `https://${templateDomain}/${slug}`
+  } else {
+    templateEndpoint = `https://${templateDomain}${fallbackPath}`
+  }
+
+  let cache = await caches.open('crowdhandler:cache')
+  let cacheHit = await cache.match(templateEndpoint)
+
+  if (cacheHit) {
+    console.log('Serving waiting room template from cache.')
+    return {
+      response: cacheHit,
+      useCache: true,
+    }
+  }
+
+  let httpParams = {
+    headers: {
+      'content-type': templateContentType,
+    },
+    method: 'GET',
+  }
+
+  async function gatherResponse(response) {
+    const { headers } = response
+    const contentType = headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      return JSON.stringify(await response.json())
+    } else if (contentType.includes('application/text')) {
+      return response.text()
+    } else if (contentType.includes('text/html')) {
+      return response.text()
+    } else {
+      return response.text()
+    }
+  }
+
+  let errorState
+  let fetchCounter = 0
+
+  async function fetchTemplate() {
+    let timer = new timeout()
+    //reset the error state
+    errorState = null
+    let response
+    try {
+      fetchCounter++
+      response = await Promise.race([
+        fetch(templateEndpoint, httpParams),
+        timer.set(templateFetchTimeout, 'API Communication Timed Out!'),
+      ])
+      //await fetch(templateEndpoint, httpParams)
+      if (response.status !== 200) {
+        throw `${response.status} ${response.statusText}`
+      }
+    } catch (error) {
+      errorState = true
+      console.error('Template Fetch Failure')
+      console.log(error)
+    } finally {
+      timer.clear()
+      if (errorState === true && fetchCounter < 3) {
+        console.log('Retrying Template Fetch.')
+        await fetchTemplate()
+      }
+      return response
+    }
+  }
+
+  let templateResponse = await fetchTemplate()
+  let results
+  let resultsMeta
+
+  if (templateResponse) {
+    results = await gatherResponse(templateResponse)
+    resultsMeta = {
+      headers: {
+        'content-type': templateContentType,
+      },
+      status: templateResponse.status,
+      statusText: templateResponse.statusText,
+    }
+  } else {
+    results = '<h2>Service Temporarily Unavailable</h2>'
+    resultsMeta = {
+      headers: {
+        'content-type': templateContentType,
+      },
+      status: 503,
+      statusText: 'Service Unavailable',
+    }
+  }
+
+  return { cache, results, resultsMeta, templateEndpoint }
+}
+
 async function handleRequest(event) {
   const { request } = event
 
@@ -19,10 +126,58 @@ async function handleRequest(event) {
   //https://developers.cloudflare.com/workers/examples/logging-headers
   const requestHeaders = Object.fromEntries(request.headers)
   //https://support.cloudflare.com/hc/en-us/articles/200170986-How-does-Cloudflare-handle-HTTP-Request-headers-
+  const unprocessedQueryString = urlAttributes.search
   const IPAddress = requestHeaders['cf-connecting-ip']
   const userAgent = requestHeaders['user-agent']
   const validToken = /(.*\d+.*)/
   let language
+  let waitingRoomDomain
+  let whiteLabelIdentifier = /^\/ch\/.*/
+
+  console.log(urlAttributes)
+
+  //Check if the request is for a whitelabel waiting room and handle response
+  if (whiteLabelIdentifier.test(path) === true) {
+    //Handle the whitelabel request
+    const whitelabelResponse = await handleWhitelabelRequest({
+      path: path,
+      queryString: unprocessedQueryString,
+    })
+
+    //Return cached response if we have one.
+    try {
+      if (whitelabelResponse.useCache === true) {
+        return whitelabelResponse.response
+      }
+    } catch (error) {
+      console.log(error)
+    }
+
+    //Store template in cache
+    try {
+      whitelabelResponse.resultsMeta.headers['cache-control'] =
+        'public, max-age=60'
+
+      if (whitelabelResponse.resultsMeta.status === 200) {
+        console.log('Storing template in cache')
+        await whitelabelResponse.cache.put(
+          whitelabelResponse.templateEndpoint,
+          new Response(
+            whitelabelResponse.results,
+            whitelabelResponse.resultsMeta,
+          ),
+        )
+      }
+    } catch (error) {
+      console.log(error)
+    }
+
+    //Return the template
+    return new Response(
+      whitelabelResponse.results,
+      whitelabelResponse.resultsMeta,
+    )
+  }
 
   //attempt to pull language from accept-language header
   try {
@@ -52,10 +207,22 @@ async function handleRequest(event) {
     failTrust = false
   }
 
-  // Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
+  //Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
   let safetyNetSlug
   if (typeof SAFETY_NET_SLUG !== 'undefined') {
     safetyNetSlug = SAFETY_NET_SLUG
+  }
+
+  //If environment variable is set to true, whitelabel waiting room will be used.
+  let whitelabel = false
+  if (typeof WHITELABEL !== 'undefined' && WHITELABEL === 'true') {
+    whitelabel = true
+  }
+
+  if (whitelabel === true) {
+    waitingRoomDomain = `${host}/ch`
+  } else {
+    waitingRoomDomain = 'wait.crowdhandler.com'
   }
 
   //Handle static file extensions
@@ -71,7 +238,6 @@ async function handleRequest(event) {
   }
 
   //Process query strings
-  let unprocessedQueryString = urlAttributes.search
   let queryString
   if (unprocessedQueryString) {
     queryString = helpers.queryStringParse(
@@ -203,7 +369,7 @@ async function handleRequest(event) {
   //Normal healthy response
   if (responseBody.promoted !== 1 && responseBody.status !== 2) {
     redirect = true
-    redirectLocation = `https://wait.crowdhandler.com/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${API_KEY}`
+    redirectLocation = `https://${waitingRoomDomain}/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${API_KEY}`
     //Abnormal response. Redirect to safety net waiting room until further notice
   } else if (
     failTrust !== true &&
@@ -212,9 +378,9 @@ async function handleRequest(event) {
   ) {
     redirect = true
     if (safetyNetSlug) {
-      redirectLocation = `https://wait.crowdhandler.com/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
+      redirectLocation = `https://${waitingRoomDomain}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
     } else {
-      redirectLocation = `https://wait.crowdhandler.com?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
+      redirectLocation = `https://${waitingRoomDomain}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
     }
     //User is promoted
   } else {
