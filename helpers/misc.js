@@ -28,6 +28,11 @@ const helpers = {
     'woff2',
     'xml',
   ],
+  noCacheHeaders: {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Expires: "Fri, 01 Jan 1970 00:00:00 GMT",
+    Pragma: "no-cache",
+  },
   lottery: function(roofInteger) {
     return Math.round(Math.random() * parseInt(roofInteger));
   },

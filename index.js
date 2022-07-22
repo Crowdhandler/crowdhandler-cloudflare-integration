@@ -246,8 +246,14 @@ async function handleRequest(event) {
   }
 
   //Destructure special params from query string if they are present
-  let { 'ch-code': chCode, 'ch-id': chID, 'ch-public-key': chPublicKey } =
-    queryString || {}
+  let {
+    'ch-code': chCode,
+    'ch-fresh': chFresh,
+    'ch-id': chID,
+    'ch-id-signature': chIDSignature,
+    'ch-public-key': chPublicKey,
+    'ch-requested': chRequested,
+  } = queryString || {}
 
   //Override chCode value if the current one is unusable
   if (!chCode || chCode === 'undefined' || chCode === 'null') {
@@ -257,8 +263,11 @@ async function handleRequest(event) {
   //Remove special params from the queryString object now that we don't need them anymore
   if (queryString) {
     delete queryString['ch-code']
+    delete queryString['ch-fresh']
     delete queryString['ch-id']
+    delete queryString['ch-id-signature']
     delete queryString['ch-public-key']
+    delete queryString['ch-requested']
   }
 
   //Convert to usable querystring format
@@ -286,12 +295,35 @@ async function handleRequest(event) {
 
   //Prioritise tokens in the ch-id parameter and fallback to ones found in the cookie
   let token
+  let freshlyPromoted
   if (chID) {
     token = chID
+    freshlyPromoted = true
   } else if (crowdhandlerCookieValue) {
     token = crowdhandlerCookieValue
   } else {
     token = null
+  }
+
+  //If this is a freshly promoted session, strip the special CrowdHandler parameters by issuing a redirect.
+  if (freshlyPromoted) {
+    let setCookie = {
+      'Set-Cookie': `crowdhandler=${token}; path=/; Secure; HttpOnly`,
+    }
+    let redirectLocation
+    if (queryString) {
+      redirectLocation = { Location: `${path}${queryString}` }
+    } else {
+      redirectLocation = { Location: path }
+    }
+    return new Response(null, {
+      status: 302,
+      headers: Object.assign(
+        helpers.noCacheHeaders,
+        redirectLocation,
+        setCookie,
+      ),
+    })
   }
 
   //Invalidate tokens that don't conform to the accepted format
@@ -394,17 +426,17 @@ async function handleRequest(event) {
       if (responseBody.token) {
         return new Response(null, {
           status: 302,
-          headers: {
+          headers: Object.assign(helpers.noCacheHeaders, {
             Location: redirectLocation,
             'Set-Cookie': `crowdhandler=${responseBody.token}; path=/; Secure; HttpOnly`,
-          },
+          }),
         })
       } else {
         return new Response(null, {
           status: 302,
-          headers: {
+          headers: Object.assign(helpers.noCacheHeaders, {
             Location: redirectLocation,
-          },
+          }),
         })
       }
       break
