@@ -308,7 +308,7 @@ async function handleRequest(event) {
   //If this is a freshly promoted session, strip the special CrowdHandler parameters by issuing a redirect.
   if (freshlyPromoted) {
     let setCookie = {
-      'Set-Cookie': `crowdhandler=${token}; path=/; Secure; HttpOnly`,
+      'Set-Cookie': `crowdhandler=${token}; path=/; Secure`,
     }
     let redirectLocation
     if (queryString) {
@@ -428,7 +428,7 @@ async function handleRequest(event) {
           status: 302,
           headers: Object.assign(helpers.noCacheHeaders, {
             Location: redirectLocation,
-            'Set-Cookie': `crowdhandler=${responseBody.token}; path=/; Secure; HttpOnly`,
+            'Set-Cookie': `crowdhandler=${responseBody.token}; path=/; Secure`,
           }),
         })
       } else {
@@ -466,7 +466,7 @@ async function handleRequest(event) {
   if (validToken.test(responseBody.token) === true) {
     modifiedOriginResponse.headers.append(
       'set-cookie',
-      `crowdhandler=${responseBody.token}; path=/; Secure; HttpOnly`,
+      `crowdhandler=${responseBody.token}; path=/; Secure`,
     )
   }
   //Set integration method cookie
