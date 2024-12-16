@@ -8,7 +8,16 @@ async function handleWhitelabelRequest(request) {
   let slug = request.path.substring(4)
 
   let templateContentType = 'text/html;charset=UTF-8'
-  let templateDomain = 'wait.crowdhandler.com'
+  let templateDomain;
+
+  let devPublicKeys = ["dba793b5eb837611498d0b809aefdefcb6f113310b272f6114435964670125a1", "04a39378b6abc3e3ee870828471636a9d1e157b1a7720821aed4c260108ebe43"]
+
+  if (devPublicKeys.includes(API_KEY)) {
+    templateDomain = 'wait-dev.crowdhandler.com'
+  } else {
+    templateDomain = 'wait.crowdhandler.com'
+  }
+
   let templateEndpoint
   let templateFetchTimeout = 6000
   if (slug) {
@@ -115,6 +124,7 @@ async function handleRequest(event) {
   const requestStartTime = Date.now()
   //Extensions that should be passed-through
   const bypassedFileExtensions = helpers.creativeAssetExtensions
+  const wordpressExclusions = helpers.wordpressExclusions
 
   //Full URL
   const url = request.url
@@ -279,6 +289,20 @@ async function handleRequest(event) {
     queryString = `?${queryString}`
   } else {
     queryString = null
+  }
+
+  //Handle Wordpress exclusions
+  let origin_type;
+  if (typeof ORIGIN_TYPE !== 'undefined') {
+    origin_type = ORIGIN_TYPE;
+  }
+
+  if (origin_type === 'wordpress') {
+    if (wordpressExclusions.test(path) === true || wordpressExclusions.test(queryString) === true) {
+      console.log('Wordpress exclusion detected. Going straight to origin.')
+      //Return the origin page
+      return await fetch(modifiedRequest)
+    }
   }
 
   //URL encode the targetURL to be used later in redirects
