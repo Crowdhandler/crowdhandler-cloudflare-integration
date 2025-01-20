@@ -29,14 +29,14 @@ const helpers = {
     'xml',
   ],
   //regex for matching wordpress urls and query strings
-  wordpressExclusions: /(wp-.*|wc-.*|xmlrpc\.php|readme\.html|license\.txt|trackback|feed(?:\/.*)?|comments\/feed(?:\/.*)?)(\?.*)?/,
+  wordpressExclusions: /(w[cp][-_](?![-_]).*|xmlrpc\.php|readme\.html|license\.txt|trackback|feed(?:\/.*)?|comments\/feed(?:\/.*)?)(\?.*)?/,
   noCacheHeaders: {
     'Cache-Control': 'no-cache, no-store, must-revalidate',
     Expires: 'Fri, 01 Jan 1970 00:00:00 GMT',
     Pragma: 'no-cache',
   },
   lottery: function(roofInteger) {
-    return Math.round(Math.random() * parseInt(roofInteger));
+    return Math.round(Math.random() * parseInt(roofInteger))
   },
   parseCookies: function(headers) {
     const parsedCookie = {}
