@@ -8,9 +8,12 @@ async function handleWhitelabelRequest(request) {
   let slug = request.path.substring(4)
 
   let templateContentType = 'text/html;charset=UTF-8'
-  let templateDomain;
+  let templateDomain
 
-  let devPublicKeys = ["dba793b5eb837611498d0b809aefdefcb6f113310b272f6114435964670125a1", "04a39378b6abc3e3ee870828471636a9d1e157b1a7720821aed4c260108ebe43"]
+  let devPublicKeys = [
+    'dba793b5eb837611498d0b809aefdefcb6f113310b272f6114435964670125a1',
+    '04a39378b6abc3e3ee870828471636a9d1e157b1a7720821aed4c260108ebe43',
+  ]
 
   if (devPublicKeys.includes(API_KEY)) {
     templateDomain = 'wait-dev.crowdhandler.com'
@@ -142,9 +145,22 @@ async function handleRequest(event) {
   const validToken = /(.*\d+.*)/
   let language
   let waitingRoomDomain
+
+  let statusIdentifier = /^\/ch\/status$/
   let whiteLabelIdentifier = /^\/ch\/.*/
 
-  console.log(urlAttributes)
+  //Check if the request is for a status check and handle response
+  if (statusIdentifier.test(path) === true) {
+    return new Response(
+      JSON.stringify({ integration: 'cloudflare', status: 'ok' }),
+      {
+        headers: {
+          'content-type': 'text/plain',
+          'cache-control': 'public, max-age=60',
+        },
+      },
+    )
+  }
 
   //Check if the request is for a whitelabel waiting room and handle response
   if (whiteLabelIdentifier.test(path) === true) {
@@ -292,13 +308,16 @@ async function handleRequest(event) {
   }
 
   //Handle Wordpress exclusions
-  let origin_type;
+  let origin_type
   if (typeof ORIGIN_TYPE !== 'undefined') {
-    origin_type = ORIGIN_TYPE;
+    origin_type = ORIGIN_TYPE
   }
 
   if (origin_type === 'wordpress') {
-    if (wordpressExclusions.test(path) === true || wordpressExclusions.test(queryString) === true) {
+    if (
+      wordpressExclusions.test(path) === true ||
+      wordpressExclusions.test(queryString) === true
+    ) {
       console.log('Wordpress exclusion detected. Going straight to origin.')
       //Return the origin page
       return await fetch(modifiedRequest)
