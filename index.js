@@ -1,9 +1,8 @@
 import helpers from './helpers/misc'
 import http_helpers from './helpers/http'
+import Timeout from 'await-timeout'
 
-const timeout = require('await-timeout')
-
-async function handleWhitelabelRequest(request) {
+async function handleWhitelabelRequest(request, env) {
   let fallbackPath = `/${request.queryString}`
   let slug = request.path.substring(4)
 
@@ -15,7 +14,7 @@ async function handleWhitelabelRequest(request) {
     '04a39378b6abc3e3ee870828471636a9d1e157b1a7720821aed4c260108ebe43',
   ]
 
-  if (devPublicKeys.includes(API_KEY)) {
+  if (devPublicKeys.includes(env.API_KEY)) {
     templateDomain = 'wait-dev.crowdhandler.com'
   } else {
     templateDomain = 'wait.crowdhandler.com'
@@ -65,7 +64,7 @@ async function handleWhitelabelRequest(request) {
   let fetchCounter = 0
 
   async function fetchTemplate() {
-    let timer = new timeout()
+    let timer = new Timeout()
     //reset the error state
     errorState = null
     let response
@@ -120,8 +119,7 @@ async function handleWhitelabelRequest(request) {
   return { cache, results, resultsMeta, templateEndpoint }
 }
 
-async function handleRequest(event) {
-  const { request } = event
+async function handleRequest(request, env, ctx) {
 
   //Log the time that the request was initiated
   const requestStartTime = Date.now()
@@ -168,7 +166,7 @@ async function handleRequest(event) {
     const whitelabelResponse = await handleWhitelabelRequest({
       path: path,
       queryString: unprocessedQueryString,
-    })
+    }, env)
 
     //Return cached response if we have one.
     try {
@@ -223,25 +221,25 @@ async function handleRequest(event) {
 
   //We can't be sure that these optional environment variables exists so do a check first to avoid a reference error
   //Add x-ch-no-bypass header to request object if NO_BYPASS present in CF env variables
-  if (typeof NO_BYPASS !== 'undefined') {
-    modifiedRequest.headers.append('x-ch-no-bypass', NO_BYPASS)
+  if (env.NO_BYPASS) {
+    modifiedRequest.headers.append('x-ch-no-bypass', env.NO_BYPASS)
   }
 
   //If environment variable is set to true, users that fail to check-in with CrowdHandler will be trusted.
   let failTrust = true
-  if (typeof FAIL_TRUST !== 'undefined' && FAIL_TRUST === 'false') {
+  if (env.FAIL_TRUST && env.FAIL_TRUST === 'false') {
     failTrust = false
   }
 
   //Set slug of fallback waiting room for users that fail to check-in with CrowdHandler.
   let safetyNetSlug
-  if (typeof SAFETY_NET_SLUG !== 'undefined') {
-    safetyNetSlug = SAFETY_NET_SLUG
+  if (env.SAFETY_NET_SLUG) {
+    safetyNetSlug = env.SAFETY_NET_SLUG
   }
 
   //If environment variable is set to true, whitelabel waiting room will be used.
   let whitelabel = false
-  if (typeof WHITELABEL !== 'undefined' && WHITELABEL === 'true') {
+  if (env.WHITELABEL && env.WHITELABEL === 'true') {
     whitelabel = true
   }
 
@@ -309,8 +307,8 @@ async function handleRequest(event) {
 
   //Handle Wordpress exclusions
   let origin_type
-  if (typeof ORIGIN_TYPE !== 'undefined') {
-    origin_type = ORIGIN_TYPE
+  if (env.ORIGIN_TYPE) {
+    origin_type = env.ORIGIN_TYPE
   }
 
   if (origin_type === 'wordpress') {
@@ -375,11 +373,12 @@ async function handleRequest(event) {
   }
 
   //First API call here
-  const apiHost = API_ENDPOINT
+  const apiHost = env.API_ENDPOINT
+  const apiTimeout = 4000 // 4 second timeout
   let httpParams = {
     headers: {
       'content-type': 'application/json',
-      'x-api-key': API_KEY,
+      'x-api-key': env.API_KEY,
     },
     //choose method dynamically
     method: undefined,
@@ -387,20 +386,28 @@ async function handleRequest(event) {
 
   //Determine if a GET or POST request should be made.
   let response
+  let timer = new Timeout()
+
   //Make fetch
   if (token) {
     httpParams.method = 'GET'
     try {
-      response = await fetch(
-        `${apiHost}/requests/${token}?url=${targetURL}&agent=${encodeURIComponent(
-          userAgent,
-        )}&ip=${encodeURIComponent(IPAddress)}&lang=${encodeURIComponent(
-          language,
-        )}`,
-        httpParams,
-      )
+      response = await Promise.race([
+        fetch(
+          `${apiHost}/requests/${token}?url=${targetURL}&agent=${encodeURIComponent(
+            userAgent,
+          )}&ip=${encodeURIComponent(IPAddress)}&lang=${encodeURIComponent(
+            language,
+          )}`,
+          httpParams,
+        ),
+        timer.set(apiTimeout, 'CrowdHandler API request timed out'),
+      ])
     } catch (error) {
-      console.error(error)
+      console.error('CrowdHandler API GET request failed:', error)
+      response = undefined
+    } finally {
+      timer.clear()
     }
   } else {
     //This is a post so generate a payload and add it to the httpParams object
@@ -412,9 +419,15 @@ async function handleRequest(event) {
     })
     httpParams.method = 'POST'
     try {
-      response = await fetch(`${apiHost}/requests`, httpParams)
+      response = await Promise.race([
+        fetch(`${apiHost}/requests`, httpParams),
+        timer.set(apiTimeout, 'CrowdHandler API request timed out'),
+      ])
     } catch (error) {
-      console.error(error)
+      console.error('CrowdHandler API POST request failed:', error)
+      response = undefined
+    } finally {
+      timer.clear()
     }
   }
 
@@ -444,7 +457,7 @@ async function handleRequest(event) {
   //Normal healthy response
   if (responseBody.promoted !== 1 && responseBody.status !== 2) {
     redirect = true
-    redirectLocation = `https://${waitingRoomDomain}/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${API_KEY}`
+    redirectLocation = `https://${waitingRoomDomain}/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`
     //Abnormal response. Redirect to safety net waiting room until further notice
   } else if (
     failTrust !== true &&
@@ -453,9 +466,9 @@ async function handleRequest(event) {
   ) {
     redirect = true
     if (safetyNetSlug) {
-      redirectLocation = `https://${waitingRoomDomain}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
+      redirectLocation = `https://${waitingRoomDomain}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${env.API_KEY}`
     } else {
-      redirectLocation = `https://${waitingRoomDomain}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${API_KEY}`
+      redirectLocation = `https://${waitingRoomDomain}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${env.API_KEY}`
     }
     //User is promoted
   } else {
@@ -543,17 +556,16 @@ async function handleRequest(event) {
   }
 
   //This trick allows the sendRequestMeta function call to continue after we've already returned the response to the user
-  //https://developers.cloudflare.com/workers/runtime-apis/fetch-event
-  event.waitUntil(
-    new Promise(resolve => {
-      resolve(sendRequestMeta())
-    }),
-  )
+  //https://developers.cloudflare.com/workers/runtime-apis/context
+  ctx.waitUntil(sendRequestMeta())
 
   //We're done send the response
   return modifiedOriginResponse
 }
 
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event))
-})
+export default {
+  async fetch(request, env, ctx) {
+    ctx.passThroughOnException()
+    return await handleRequest(request, env, ctx)
+  },
+}

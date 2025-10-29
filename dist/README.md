@@ -1,0 +1,1 @@
+This folder contains the built output assets for the worker "worker.js" generated at 2025-10-29T11:42:54.493Z.
