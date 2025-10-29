@@ -1,10 +1,14 @@
 {
   "private": true,
   "name": "crowdhandler-cloudflare-integration",
-  "version": "1.0.0",
-  "description": "A template for kick starting a Cloudflare Workers project",
+  "version": "2.0.0",
+  "description": "CrowdHandler integration for Cloudflare Workers (ES Modules)",
   "main": "index.js",
+  "type": "module",
   "scripts": {
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
     "test": "echo \"Error: no test specified\" && exit 1",
     "format": "prettier --write '**/*.{js,css,json,md}'"
   },
