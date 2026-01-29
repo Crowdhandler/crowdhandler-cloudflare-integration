@@ -36,7 +36,7 @@ const helpers = {
     Pragma: 'no-cache',
   },
   lottery: function(roofInteger) {
-    return Math.round(Math.random() * parseInt(roofInteger))
+    return Math.floor(Math.random() * parseInt(roofInteger))
   },
   parseCookies: function(headers) {
     const parsedCookie = {}
@@ -44,7 +44,9 @@ const helpers = {
       headers.cookie.split(';').forEach(cookie => {
         if (cookie) {
           const parts = cookie.split('=')
-          parsedCookie[parts[0].trim()] = parts[1].trim()
+          if (parts[1] !== undefined) {
+            parsedCookie[parts[0].trim()] = parts[1].trim()
+          }
         }
       })
     }
