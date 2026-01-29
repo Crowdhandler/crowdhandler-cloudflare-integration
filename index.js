@@ -80,13 +80,12 @@ async function handleWhitelabelRequest(request, env) {
       }
     } catch (error) {
       errorState = true
-      console.error('Template Fetch Failure')
-      console.log(error)
+      console.error('Template Fetch Failure:', error)
     } finally {
       timer.clear()
       if (errorState === true && fetchCounter < 3) {
         console.log('Retrying Template Fetch.')
-        await fetchTemplate()
+        return await fetchTemplate()
       }
       return response
     }
@@ -138,10 +137,10 @@ async function handleRequest(request, env, ctx) {
   const requestHeaders = Object.fromEntries(request.headers)
   //https://support.cloudflare.com/hc/en-us/articles/200170986-How-does-Cloudflare-handle-HTTP-Request-headers-
   const unprocessedQueryString = urlAttributes.search
-  const IPAddress = requestHeaders['cf-connecting-ip']
-  const userAgent = requestHeaders['user-agent']
+  const IPAddress = requestHeaders['cf-connecting-ip'] || null
+  const userAgent = requestHeaders['user-agent'] || null
   const validToken = /(.*\d+.*)/
-  let language
+  let language = null
   let waitingRoomDomain
 
   let statusIdentifier = /^\/ch\/status$/
@@ -174,7 +173,7 @@ async function handleRequest(request, env, ctx) {
         return whitelabelResponse.response
       }
     } catch (error) {
-      console.log(error)
+      console.error('Cache retrieval error:', error)
     }
 
     //Store template in cache
@@ -183,7 +182,6 @@ async function handleRequest(request, env, ctx) {
         'public, max-age=60'
 
       if (whitelabelResponse.resultsMeta.status === 200) {
-        console.log('Storing template in cache')
         await whitelabelResponse.cache.put(
           whitelabelResponse.templateEndpoint,
           new Response(
@@ -193,7 +191,7 @@ async function handleRequest(request, env, ctx) {
         )
       }
     } catch (error) {
-      console.log(error)
+      console.error('Cache storage error:', error)
     }
 
     //Return the template
@@ -207,8 +205,7 @@ async function handleRequest(request, env, ctx) {
   try {
     language = requestHeaders['accept-language'].split(',')[0]
   } catch (error) {
-    console.log('Failed to find a valid accept-language value')
-    console.log(error)
+    // Accept-language header not present - not critical
   }
 
   //Request object is read only so we are going to create a clone in order to be able to modify it
@@ -250,23 +247,19 @@ async function handleRequest(request, env, ctx) {
   }
 
   //Handle static file extensions
-  let fileExtension = path.match(/\.(.*)/)
+  let fileExtension = path.match(/\.([^.]+)$/)
   if (fileExtension !== null) {
     fileExtension = fileExtension[1]
   }
 
   if (bypassedFileExtensions.indexOf(fileExtension) !== -1) {
-    console.log('Static file detected. Going straight to origin.')
-    //Return the origin page
     return await fetch(modifiedRequest)
   }
 
   //Process query strings
   let queryString
   if (unprocessedQueryString) {
-    queryString = helpers.queryStringParse(
-      decodeURIComponent(unprocessedQueryString),
-    )
+    queryString = helpers.queryStringParse(unprocessedQueryString)
   }
 
   //Destructure special params from query string if they are present
@@ -297,7 +290,7 @@ async function handleRequest(request, env, ctx) {
   //Convert to usable querystring format
   if (queryString && Object.keys(queryString).length !== 0) {
     queryString = Object.keys(queryString)
-      .map(key => key + '=' + queryString[key])
+      .map(key => encodeURIComponent(key) + '=' + encodeURIComponent(queryString[key]))
       .join('&')
 
     queryString = `?${queryString}`
@@ -316,8 +309,6 @@ async function handleRequest(request, env, ctx) {
       wordpressExclusions.test(path) === true ||
       wordpressExclusions.test(queryString) === true
     ) {
-      console.log('Wordpress exclusion detected. Going straight to origin.')
-      //Return the origin page
       return await fetch(modifiedRequest)
     }
   }
@@ -336,14 +327,18 @@ async function handleRequest(request, env, ctx) {
 
   //Prioritise tokens in the ch-id parameter and fallback to ones found in the cookie
   let token
+  let tokenSource
   let freshlyPromoted
   if (chID) {
     token = chID
+    tokenSource = 'param'
     freshlyPromoted = true
   } else if (crowdhandlerCookieValue) {
     token = crowdhandlerCookieValue
+    tokenSource = 'cookie'
   } else {
     token = null
+    tokenSource = 'new'
   }
 
   //If this is a freshly promoted session, strip the special CrowdHandler parameters by issuing a redirect.
@@ -440,14 +435,11 @@ async function handleRequest(request, env, ctx) {
   //Handle API request error here
   if (results.success !== true) {
     console.error(
-      `API response returned a ${results.status} response with error ${results.statusText}`,
+      `API error: ${results.status} ${results.statusText}`,
     )
     responseBody = results.body.result
-    console.log(responseBody)
   } else {
-    //Response body here
     responseBody = results.body.result
-    console.log(responseBody)
   }
 
   let redirect
@@ -477,8 +469,7 @@ async function handleRequest(request, env, ctx) {
 
   switch (redirect) {
     case true: {
-      //redirect
-      console.log('redirecting...')
+      console.log(`[CH] ${host}${path} | src:${tokenSource} | action:redirect | token:${responseBody.token || token || 'none'}`)
       if (responseBody.token) {
         return new Response(null, {
           status: 302,
@@ -498,8 +489,7 @@ async function handleRequest(request, env, ctx) {
       break
     }
     case false: {
-      //continue
-      console.log('continue...')
+      console.log(`[CH] ${host}${path} | src:${tokenSource} | action:allow | token:${responseBody.token || 'none'}`)
       break
     }
     default: {
@@ -540,7 +530,7 @@ async function handleRequest(request, env, ctx) {
   //Send request meta information.
   async function sendRequestMeta() {
     //Sampling
-    if (responseID && helpers.lottery(2) === 0) {
+    if (responseID && helpers.lottery(3) === 0) {
       httpParams.body = JSON.stringify({
         httpCode: originResponse.status,
         sampleRate: 3,

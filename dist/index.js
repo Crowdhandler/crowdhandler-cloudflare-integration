@@ -134,7 +134,7 @@ var helpers = {
     Pragma: "no-cache"
   },
   lottery: /* @__PURE__ */ __name(function(roofInteger) {
-    return Math.round(Math.random() * parseInt(roofInteger));
+    return Math.floor(Math.random() * parseInt(roofInteger));
   }, "lottery"),
   parseCookies: /* @__PURE__ */ __name(function(headers) {
     const parsedCookie = {};
@@ -142,7 +142,9 @@ var helpers = {
       headers.cookie.split(";").forEach((cookie) => {
         if (cookie) {
           const parts = cookie.split("=");
-          parsedCookie[parts[0].trim()] = parts[1].trim();
+          if (parts[1] !== void 0) {
+            parsedCookie[parts[0].trim()] = parts[1].trim();
+          }
         }
       });
     }
@@ -273,13 +275,12 @@ async function handleWhitelabelRequest(request, env) {
       }
     } catch (error) {
       errorState = true;
-      console.error("Template Fetch Failure");
-      console.log(error);
+      console.error("Template Fetch Failure:", error);
     } finally {
       timer.clear();
       if (errorState === true && fetchCounter < 3) {
         console.log("Retrying Template Fetch.");
-        await fetchTemplate();
+        return await fetchTemplate();
       }
       return response;
     }
@@ -320,10 +321,10 @@ async function handleRequest(request, env, ctx) {
   const path = urlAttributes.pathname;
   const requestHeaders = Object.fromEntries(request.headers);
   const unprocessedQueryString = urlAttributes.search;
-  const IPAddress = requestHeaders["cf-connecting-ip"];
-  const userAgent = requestHeaders["user-agent"];
+  const IPAddress = requestHeaders["cf-connecting-ip"] || null;
+  const userAgent = requestHeaders["user-agent"] || null;
   const validToken = /(.*\d+.*)/;
-  let language;
+  let language = null;
   let waitingRoomDomain;
   let statusIdentifier = /^\/ch\/status$/;
   let whiteLabelIdentifier = /^\/ch\/.*/;
@@ -348,12 +349,11 @@ async function handleRequest(request, env, ctx) {
         return whitelabelResponse.response;
       }
     } catch (error) {
-      console.log(error);
+      console.error("Cache retrieval error:", error);
     }
     try {
       whitelabelResponse.resultsMeta.headers["cache-control"] = "public, max-age=60";
       if (whitelabelResponse.resultsMeta.status === 200) {
-        console.log("Storing template in cache");
         await whitelabelResponse.cache.put(
           whitelabelResponse.templateEndpoint,
           new Response(
@@ -363,7 +363,7 @@ async function handleRequest(request, env, ctx) {
         );
       }
     } catch (error) {
-      console.log(error);
+      console.error("Cache storage error:", error);
     }
     return new Response(
       whitelabelResponse.results,
@@ -373,8 +373,6 @@ async function handleRequest(request, env, ctx) {
   try {
     language = requestHeaders["accept-language"].split(",")[0];
   } catch (error) {
-    console.log("Failed to find a valid accept-language value");
-    console.log(error);
   }
   const modifiedRequest = new Request(url, {
     body: request.body,
@@ -402,19 +400,16 @@ async function handleRequest(request, env, ctx) {
   } else {
     waitingRoomDomain = "wait.crowdhandler.com";
   }
-  let fileExtension = path.match(/\.(.*)/);
+  let fileExtension = path.match(/\.([^.]+)$/);
   if (fileExtension !== null) {
     fileExtension = fileExtension[1];
   }
   if (bypassedFileExtensions.indexOf(fileExtension) !== -1) {
-    console.log("Static file detected. Going straight to origin.");
     return await fetch(modifiedRequest);
   }
   let queryString;
   if (unprocessedQueryString) {
-    queryString = misc_default.queryStringParse(
-      decodeURIComponent(unprocessedQueryString)
-    );
+    queryString = misc_default.queryStringParse(unprocessedQueryString);
   }
   let {
     "ch-code": chCode,
@@ -436,7 +431,7 @@ async function handleRequest(request, env, ctx) {
     delete queryString["ch-requested"];
   }
   if (queryString && Object.keys(queryString).length !== 0) {
-    queryString = Object.keys(queryString).map((key) => key + "=" + queryString[key]).join("&");
+    queryString = Object.keys(queryString).map((key) => encodeURIComponent(key) + "=" + encodeURIComponent(queryString[key])).join("&");
     queryString = `?${queryString}`;
   } else {
     queryString = null;
@@ -447,7 +442,6 @@ async function handleRequest(request, env, ctx) {
   }
   if (origin_type === "wordpress") {
     if (wordpressExclusions.test(path) === true || wordpressExclusions.test(queryString) === true) {
-      console.log("Wordpress exclusion detected. Going straight to origin.");
       return await fetch(modifiedRequest);
     }
   }
@@ -460,14 +454,18 @@ async function handleRequest(request, env, ctx) {
   const parsedCookies = misc_default.parseCookies(requestHeaders);
   let crowdhandlerCookieValue = parsedCookies["crowdhandler"];
   let token;
+  let tokenSource;
   let freshlyPromoted;
   if (chID) {
     token = chID;
+    tokenSource = "param";
     freshlyPromoted = true;
   } else if (crowdhandlerCookieValue) {
     token = crowdhandlerCookieValue;
+    tokenSource = "cookie";
   } else {
     token = null;
+    tokenSource = "new";
   }
   if (freshlyPromoted) {
     let setCookie = {
@@ -548,13 +546,11 @@ async function handleRequest(request, env, ctx) {
   let responseBody;
   if (results.success !== true) {
     console.error(
-      `API response returned a ${results.status} response with error ${results.statusText}`
+      `API error: ${results.status} ${results.statusText}`
     );
     responseBody = results.body.result;
-    console.log(responseBody);
   } else {
     responseBody = results.body.result;
-    console.log(responseBody);
   }
   let redirect;
   let redirectLocation;
@@ -574,7 +570,7 @@ async function handleRequest(request, env, ctx) {
   }
   switch (redirect) {
     case true: {
-      console.log("redirecting...");
+      console.log(`[CH] ${host}${path} | src:${tokenSource} | action:redirect | token:${responseBody.token || token || "none"}`);
       if (responseBody.token) {
         return new Response(null, {
           status: 302,
@@ -594,7 +590,7 @@ async function handleRequest(request, env, ctx) {
       break;
     }
     case false: {
-      console.log("continue...");
+      console.log(`[CH] ${host}${path} | src:${tokenSource} | action:allow | token:${responseBody.token || "none"}`);
       break;
     }
     default: {
@@ -620,7 +616,7 @@ async function handleRequest(request, env, ctx) {
   const requestEndTime = Date.now();
   const responseID = responseBody.responseID;
   async function sendRequestMeta() {
-    if (responseID && misc_default.lottery(2) === 0) {
+    if (responseID && misc_default.lottery(3) === 0) {
       httpParams.body = JSON.stringify({
         httpCode: originResponse.status,
         sampleRate: 3,
