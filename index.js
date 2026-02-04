@@ -450,7 +450,16 @@ async function handleRequest(request, env, ctx) {
   if (responseBody.promoted !== 1 && responseBody.status !== 2) {
     redirect = true
     redirectLocation = `https://${waitingRoomDomain}/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`
-    //Abnormal response. Redirect to safety net waiting room until further notice
+    //4xx client error - always redirect to safety net (ignore failTrust)
+  } else if (responseBody.clientError === true) {
+    console.error('[CH] API returned 4xx client error - redirecting to safety net')
+    redirect = true
+    if (safetyNetSlug) {
+      redirectLocation = `https://${waitingRoomDomain}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${env.API_KEY}`
+    } else {
+      redirectLocation = `https://${waitingRoomDomain}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${env.API_KEY}`
+    }
+    //5xx server error - respect failTrust setting
   } else if (
     failTrust !== true &&
     responseBody.promoted !== 1 &&

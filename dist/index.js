@@ -182,6 +182,27 @@ var dummyResponseData = {
     ttl: null
   }
 };
+var clientErrorResponseData = {
+  result: {
+    status: 2,
+    clientError: true,
+    token: null,
+    title: null,
+    position: null,
+    live_position: null,
+    promoted: null,
+    urlRedirect: null,
+    onsale: null,
+    message: null,
+    slug: null,
+    priority: null,
+    priorityAvailable: null,
+    logo: null,
+    responseID: null,
+    captchaRequired: null,
+    ttl: null
+  }
+};
 var http_helpers = {
   processResponse: /* @__PURE__ */ __name(async function(response) {
     let fetchResponse;
@@ -190,10 +211,14 @@ var http_helpers = {
     if (!fetchResponse) {
       responseObject.body = dummyResponseData;
       responseObject.status = null;
-      responseObject.statusText = "Communication failure between Cloudflare and the CrowdHandler API occured.";
+      responseObject.statusText = "Communication failure between Cloudflare and the CrowdHandler API occurred.";
       responseObject.success = false;
       return responseObject;
-    } else if (fetchResponse.status !== 200) {
+    } else if (fetchResponse.status >= 400 && fetchResponse.status < 500) {
+      console.error(`[CH] API 4xx: ${fetchResponse.status}`);
+      responseObject.body = clientErrorResponseData;
+    } else if (fetchResponse.status >= 500) {
+      console.error(`[CH] API 5xx: ${fetchResponse.status}`);
       responseObject.body = dummyResponseData;
     } else {
       responseObject.body = await response.json();
@@ -558,6 +583,14 @@ async function handleRequest(request, env, ctx) {
   if (responseBody.promoted !== 1 && responseBody.status !== 2) {
     redirect = true;
     redirectLocation = `https://${waitingRoomDomain}/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`;
+  } else if (responseBody.clientError === true) {
+    console.error("[CH] API returned 4xx client error - redirecting to safety net");
+    redirect = true;
+    if (safetyNetSlug) {
+      redirectLocation = `https://${waitingRoomDomain}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${env.API_KEY}`;
+    } else {
+      redirectLocation = `https://${waitingRoomDomain}/?url=${targetURL}&ch-code=${chCode}&ch-id=${token}&ch-public-key=${env.API_KEY}`;
+    }
   } else if (failTrust !== true && responseBody.promoted !== 1 && responseBody.status === 2) {
     redirect = true;
     if (safetyNetSlug) {
