@@ -154,7 +154,15 @@ var helpers = {
     const params = new URLSearchParams(querystring);
     let qStrObject = {};
     for (let item of params) {
-      qStrObject[item[0]] = item[1];
+      if (qStrObject.hasOwnProperty(item[0])) {
+        if (Array.isArray(qStrObject[item[0]])) {
+          qStrObject[item[0]].push(item[1]);
+        } else {
+          qStrObject[item[0]] = [qStrObject[item[0]], item[1]];
+        }
+      } else {
+        qStrObject[item[0]] = item[1];
+      }
     }
     return qStrObject;
   }, "queryStringParse")
@@ -456,8 +464,14 @@ async function handleRequest(request, env, ctx) {
     delete queryString["ch-requested"];
   }
   if (queryString && Object.keys(queryString).length !== 0) {
-    queryString = Object.keys(queryString).map((key) => encodeURIComponent(key) + "=" + encodeURIComponent(queryString[key])).join("&");
-    queryString = `?${queryString}`;
+    let pairs = [];
+    for (const key of Object.keys(queryString)) {
+      const values = Array.isArray(queryString[key]) ? queryString[key] : [queryString[key]];
+      for (const val of values) {
+        pairs.push(encodeURIComponent(key) + "=" + encodeURIComponent(val));
+      }
+    }
+    queryString = `?${pairs.join("&")}`;
   } else {
     queryString = null;
   }
