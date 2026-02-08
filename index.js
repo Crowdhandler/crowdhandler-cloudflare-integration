@@ -289,11 +289,15 @@ async function handleRequest(request, env, ctx) {
 
   //Convert to usable querystring format
   if (queryString && Object.keys(queryString).length !== 0) {
-    queryString = Object.keys(queryString)
-      .map(key => encodeURIComponent(key) + '=' + encodeURIComponent(queryString[key]))
-      .join('&')
+    let pairs = []
+    for (const key of Object.keys(queryString)) {
+      const values = Array.isArray(queryString[key]) ? queryString[key] : [queryString[key]]
+      for (const val of values) {
+        pairs.push(encodeURIComponent(key) + '=' + encodeURIComponent(val))
+      }
+    }
 
-    queryString = `?${queryString}`
+    queryString = `?${pairs.join('&')}`
   } else {
     queryString = null
   }

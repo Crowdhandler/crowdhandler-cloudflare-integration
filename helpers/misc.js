@@ -57,7 +57,15 @@ const helpers = {
     let qStrObject = {}
 
     for (let item of params) {
-      qStrObject[item[0]] = item[1]
+      if (qStrObject.hasOwnProperty(item[0])) {
+        if (Array.isArray(qStrObject[item[0]])) {
+          qStrObject[item[0]].push(item[1])
+        } else {
+          qStrObject[item[0]] = [qStrObject[item[0]], item[1]]
+        }
+      } else {
+        qStrObject[item[0]] = item[1]
+      }
     }
     //return as object
     return qStrObject
