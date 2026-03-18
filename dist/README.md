@@ -1,1 +1,1 @@
-This folder contains the built output assets for the worker "crowdhandler-integration" generated at 2026-02-08T17:21:22.879Z.
+This folder contains the built output assets for the worker "crowdhandler-integration" generated at 2026-03-18T15:53:02.030Z.

@@ -127,7 +127,7 @@ var helpers = {
     "xml"
   ],
   //regex for matching wordpress urls and query strings
-  wordpressExclusions: /(w[cp][-_](?![-_]).*|xmlrpc\.php|readme\.html|license\.txt|trackback|feed(?:\/.*)?|comments\/feed(?:\/.*)?)(\?.*)?/,
+  wordpressExclusions: /(w[cp][-_](?![-_])(?!order).*|xmlrpc\.php|readme\.html|license\.txt|trackback|feed(?:\/.*)?|comments\/feed(?:\/.*)?)(\?.*)?/,
   noCacheHeaders: {
     "Cache-Control": "no-cache, no-store, must-revalidate",
     Expires: "Fri, 01 Jan 1970 00:00:00 GMT",
