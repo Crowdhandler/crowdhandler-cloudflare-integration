@@ -150,6 +150,23 @@ var helpers = {
     }
     return parsedCookie;
   }, "parseCookies"),
+  //Build a Set-Cookie value for the crowdhandler token, optionally with a
+  //Domain attribute so the cookie can be shared across subdomains of the
+  //configured parent. The raw value is trimmed and validated against
+  //hostname-safe characters so a typo'd or malicious env var can't inject
+  //into the Set-Cookie header.
+  buildCrowdhandlerCookie: /* @__PURE__ */ __name(function(tokenValue, rawCookieDomain) {
+    const parts = [`crowdhandler=${tokenValue}`, "path=/", "Secure"];
+    if (rawCookieDomain) {
+      const trimmed = String(rawCookieDomain).trim();
+      if (/^\.?[a-zA-Z0-9.-]+$/.test(trimmed)) {
+        parts.push(`Domain=${trimmed}`);
+      } else {
+        console.warn(`[CH] Ignoring invalid COOKIE_DOMAIN value: ${JSON.stringify(rawCookieDomain)}`);
+      }
+    }
+    return parts.join("; ");
+  }, "buildCrowdhandlerCookie"),
   queryStringParse: /* @__PURE__ */ __name(function(querystring) {
     const params = new URLSearchParams(querystring);
     let qStrObject = {};
@@ -428,12 +445,6 @@ async function handleRequest(request, env, ctx) {
   if (env.WHITELABEL && env.WHITELABEL === "true") {
     whitelabel = true;
   }
-  const cookieDomain = env.COOKIE_DOMAIN || null;
-  const buildCrowdhandlerCookie = /* @__PURE__ */ __name((tokenValue) => {
-    const parts = [`crowdhandler=${tokenValue}`, "path=/", "Secure"];
-    if (cookieDomain) parts.push(`Domain=${cookieDomain}`);
-    return parts.join("; ");
-  }, "buildCrowdhandlerCookie");
   if (whitelabel === true) {
     waitingRoomDomain = `${host}/ch`;
   } else {
@@ -514,7 +525,7 @@ async function handleRequest(request, env, ctx) {
   }
   if (freshlyPromoted) {
     let setCookie = {
-      "Set-Cookie": buildCrowdhandlerCookie(token)
+      "Set-Cookie": misc_default.buildCrowdhandlerCookie(token, env.COOKIE_DOMAIN)
     };
     let redirectLocation2;
     if (queryString) {
@@ -629,7 +640,7 @@ async function handleRequest(request, env, ctx) {
           status: 302,
           headers: Object.assign(misc_default.noCacheHeaders, {
             Location: redirectLocation,
-            "Set-Cookie": buildCrowdhandlerCookie(responseBody.token)
+            "Set-Cookie": misc_default.buildCrowdhandlerCookie(responseBody.token, env.COOKIE_DOMAIN)
           })
         });
       } else {
@@ -659,7 +670,7 @@ async function handleRequest(request, env, ctx) {
   if (validToken.test(responseBody.token) === true) {
     modifiedOriginResponse.headers.append(
       "set-cookie",
-      `crowdhandler=${responseBody.token}; path=/; Secure`
+      misc_default.buildCrowdhandlerCookie(responseBody.token, env.COOKIE_DOMAIN)
     );
   }
   modifiedOriginResponse.headers.append(
