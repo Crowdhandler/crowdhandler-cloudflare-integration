@@ -428,6 +428,12 @@ async function handleRequest(request, env, ctx) {
   if (env.WHITELABEL && env.WHITELABEL === "true") {
     whitelabel = true;
   }
+  const cookieDomain = env.COOKIE_DOMAIN || null;
+  const buildCrowdhandlerCookie = /* @__PURE__ */ __name((tokenValue) => {
+    const parts = [`crowdhandler=${tokenValue}`, "path=/", "Secure"];
+    if (cookieDomain) parts.push(`Domain=${cookieDomain}`);
+    return parts.join("; ");
+  }, "buildCrowdhandlerCookie");
   if (whitelabel === true) {
     waitingRoomDomain = `${host}/ch`;
   } else {
@@ -508,7 +514,7 @@ async function handleRequest(request, env, ctx) {
   }
   if (freshlyPromoted) {
     let setCookie = {
-      "Set-Cookie": `crowdhandler=${token}; path=/; Secure`
+      "Set-Cookie": buildCrowdhandlerCookie(token)
     };
     let redirectLocation2;
     if (queryString) {
@@ -623,7 +629,7 @@ async function handleRequest(request, env, ctx) {
           status: 302,
           headers: Object.assign(misc_default.noCacheHeaders, {
             Location: redirectLocation,
-            "Set-Cookie": `crowdhandler=${responseBody.token}; path=/; Secure`
+            "Set-Cookie": buildCrowdhandlerCookie(responseBody.token)
           })
         });
       } else {

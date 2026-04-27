@@ -240,6 +240,18 @@ async function handleRequest(request, env, ctx) {
     whitelabel = true
   }
 
+  //Optional cookie Domain attribute. When set, the crowdhandler cookie is shared
+  //across subdomains of the configured value (e.g. ".barbican.org.uk" makes the
+  //cookie visible to both tickets.* and spektrix.*). Browsers reject Domain
+  //values that aren't a parent of the request host, so the operator is
+  //responsible for setting a valid value.
+  const cookieDomain = env.COOKIE_DOMAIN || null
+  const buildCrowdhandlerCookie = (tokenValue) => {
+    const parts = [`crowdhandler=${tokenValue}`, 'path=/', 'Secure']
+    if (cookieDomain) parts.push(`Domain=${cookieDomain}`)
+    return parts.join('; ')
+  }
+
   if (whitelabel === true) {
     waitingRoomDomain = `${host}/ch`
   } else {
@@ -348,7 +360,7 @@ async function handleRequest(request, env, ctx) {
   //If this is a freshly promoted session, strip the special CrowdHandler parameters by issuing a redirect.
   if (freshlyPromoted) {
     let setCookie = {
-      'Set-Cookie': `crowdhandler=${token}; path=/; Secure`,
+      'Set-Cookie': buildCrowdhandlerCookie(token),
     }
     let redirectLocation
     if (queryString) {
@@ -488,7 +500,7 @@ async function handleRequest(request, env, ctx) {
           status: 302,
           headers: Object.assign(helpers.noCacheHeaders, {
             Location: redirectLocation,
-            'Set-Cookie': `crowdhandler=${responseBody.token}; path=/; Secure`,
+            'Set-Cookie': buildCrowdhandlerCookie(responseBody.token),
           }),
         })
       } else {
