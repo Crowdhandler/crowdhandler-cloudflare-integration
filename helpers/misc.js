@@ -52,6 +52,23 @@ const helpers = {
     }
     return parsedCookie
   },
+  //Build a Set-Cookie value for the crowdhandler token, optionally with a
+  //Domain attribute so the cookie can be shared across subdomains of the
+  //configured parent. The raw value is trimmed and validated against
+  //hostname-safe characters so a typo'd or malicious env var can't inject
+  //into the Set-Cookie header.
+  buildCrowdhandlerCookie: function(tokenValue, rawCookieDomain) {
+    const parts = [`crowdhandler=${tokenValue}`, 'path=/', 'Secure']
+    if (rawCookieDomain) {
+      const trimmed = String(rawCookieDomain).trim()
+      if (/^\.?[a-zA-Z0-9.-]+$/.test(trimmed)) {
+        parts.push(`Domain=${trimmed}`)
+      } else {
+        console.warn(`[CH] Ignoring invalid COOKIE_DOMAIN value: ${JSON.stringify(rawCookieDomain)}`)
+      }
+    }
+    return parts.join('; ')
+  },
   queryStringParse: function(querystring) {
     const params = new URLSearchParams(querystring)
     let qStrObject = {}
