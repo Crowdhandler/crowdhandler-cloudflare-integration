@@ -137,7 +137,26 @@ async function handleRequest(request, env, ctx) {
   const requestHeaders = Object.fromEntries(request.headers)
   //https://support.cloudflare.com/hc/en-us/articles/200170986-How-does-Cloudflare-handle-HTTP-Request-headers-
   const unprocessedQueryString = urlAttributes.search
-  const IPAddress = requestHeaders['cf-connecting-ip'] || null
+  //Allow customers behind an upstream proxy (eg. zScaler, Imperva) to source the
+  //client IP from a different header. Defaults to Cloudflare's cf-connecting-ip.
+  //For multi-value headers like x-forwarded-for, the left-most entry is used.
+  //Any failure falls back to cf-connecting-ip so the worker never breaks.
+  const fallbackIP = requestHeaders['cf-connecting-ip'] || null
+  let IPAddress = fallbackIP
+  try {
+    if (env.IP_HEADER) {
+      const overrideValue = requestHeaders[env.IP_HEADER.toLowerCase()]
+      if (overrideValue) {
+        const parsed = overrideValue.split(',')[0].trim()
+        if (parsed) {
+          IPAddress = parsed
+        }
+      }
+    }
+  } catch (error) {
+    console.error('IP_HEADER override failed, falling back to cf-connecting-ip:', error)
+    IPAddress = fallbackIP
+  }
   const userAgent = requestHeaders['user-agent'] || null
   const validToken = /(.*\d+.*)/
   let language = null
