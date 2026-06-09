@@ -371,7 +371,22 @@ async function handleRequest(request, env, ctx) {
   const path = urlAttributes.pathname;
   const requestHeaders = Object.fromEntries(request.headers);
   const unprocessedQueryString = urlAttributes.search;
-  const IPAddress = requestHeaders["cf-connecting-ip"] || null;
+  const fallbackIP = requestHeaders["cf-connecting-ip"] || null;
+  let IPAddress = fallbackIP;
+  try {
+    if (env.IP_HEADER) {
+      const overrideValue = requestHeaders[env.IP_HEADER.toLowerCase()];
+      if (overrideValue) {
+        const parsed = overrideValue.split(",")[0].trim();
+        if (parsed) {
+          IPAddress = parsed;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("IP_HEADER override failed, falling back to cf-connecting-ip:", error);
+    IPAddress = fallbackIP;
+  }
   const userAgent = requestHeaders["user-agent"] || null;
   const validToken = /(.*\d+.*)/;
   let language = null;
