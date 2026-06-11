@@ -20,7 +20,7 @@ const dummyResponseData = {
   },
 }
 
-// Client error response (4xx) - never triggers failTrust, always safety net
+// Client error response (4xx, excluding 429) - never triggers failTrust, always safety net
 const clientErrorResponseData = {
   result: {
     status: 2,
@@ -57,6 +57,10 @@ const http_helpers = {
       responseObject.statusText = "Communication failure between Cloudflare and the CrowdHandler API occurred."
       responseObject.success = false
       return responseObject;
+    //Communication success. 429 throttle returned. Treated as a server error so failTrust is respected.
+    } else if (fetchResponse.status === 429) {
+      console.error(`[CH] API 429: throttled`)
+      responseObject.body = dummyResponseData
     //Communication success. 4xx client error returned.
     } else if (fetchResponse.status >= 400 && fetchResponse.status < 500) {
       console.error(`[CH] API 4xx: ${fetchResponse.status}`)

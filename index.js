@@ -469,8 +469,19 @@ async function handleRequest(request, env, ctx) {
   let redirectLocation
   let statusCode
 
-  //Normal healthy response
-  if (responseBody.promoted !== 1 && responseBody.status !== 2) {
+  //Throttle response (status 6) - treated as a server error, respect failTrust setting
+  if (responseBody.status === 6 && failTrust === true) {
+    redirect = false
+  } else if (responseBody.status === 6) {
+    console.error('[CH] API throttle response (status 6) - redirecting to safety net')
+    redirect = true
+    if (safetyNetSlug) {
+      redirectLocation = `https://${waitingRoomDomain}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`
+    } else {
+      redirectLocation = `https://${waitingRoomDomain}/?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`
+    }
+    //Normal healthy response
+  } else if (responseBody.promoted !== 1 && responseBody.status !== 2) {
     redirect = true
     redirectLocation = `https://${waitingRoomDomain}/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`
     //4xx client error - always redirect to safety net (ignore failTrust)

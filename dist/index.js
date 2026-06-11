@@ -239,6 +239,9 @@ var http_helpers = {
       responseObject.statusText = "Communication failure between Cloudflare and the CrowdHandler API occurred.";
       responseObject.success = false;
       return responseObject;
+    } else if (fetchResponse.status === 429) {
+      console.error(`[CH] API 429: throttled`);
+      responseObject.body = dummyResponseData;
     } else if (fetchResponse.status >= 400 && fetchResponse.status < 500) {
       console.error(`[CH] API 4xx: ${fetchResponse.status}`);
       responseObject.body = clientErrorResponseData;
@@ -626,7 +629,17 @@ async function handleRequest(request, env, ctx) {
   let redirect;
   let redirectLocation;
   let statusCode;
-  if (responseBody.promoted !== 1 && responseBody.status !== 2) {
+  if (responseBody.status === 6 && failTrust === true) {
+    redirect = false;
+  } else if (responseBody.status === 6) {
+    console.error("[CH] API throttle response (status 6) - redirecting to safety net");
+    redirect = true;
+    if (safetyNetSlug) {
+      redirectLocation = `https://${waitingRoomDomain}/${safetyNetSlug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`;
+    } else {
+      redirectLocation = `https://${waitingRoomDomain}/?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`;
+    }
+  } else if (responseBody.promoted !== 1 && responseBody.status !== 2) {
     redirect = true;
     redirectLocation = `https://${waitingRoomDomain}/${responseBody.slug}?url=${targetURL}&ch-code=${chCode}&ch-id=${responseBody.token}&ch-public-key=${env.API_KEY}`;
   } else if (responseBody.clientError === true) {
